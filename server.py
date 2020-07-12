@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import base64
+import urllib.parse
+import posixpath
+import mimetypes
+import re
 import os
 import logging
 import glob
+import shutil
 
 logging.basicConfig(filename="report_server.log",
                     format='%(asctime)s %(message)s',
@@ -11,86 +16,94 @@ logging.basicConfig(filename="report_server.log",
 logger=logging.getLogger()
 logger.setLevel(logging.INFO)
 
-class Api:
-    def __init__(self, filename):
-        logging.info("Init api class")
-        self.path = "/Users/pastuhox/things/http_file_storage/storage"
-        self.filename  = filename
-        self.directory = filename[:2]
-        logging.info("End init api class")
-
-    def download(self):
-        logging.info(f"DOWNLOAD {self.filename} {self.directory}")
-
-    def delete(self):
-        try:
-            file_path = self._create_file_path()
-            os.remove(file_path)
-            return f"Deleted {self.filename} from the disk."
-        except FileNotFoundError as e:
-            logging.error(f"method delete {e}")
-            return f"File {self.filename} was not found on the disk."
-    
-    def upload(self):
-        logging.info(f"method upload filename {filename} ")
-
-    def _create_file_path(self):
-        return f"{self.path}/{self.directory}/{self.filename}"
 
 
-
-
-class S(BaseHTTPRequestHandler, Api):
-
-    def _set_response(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
+class S(BaseHTTPRequestHandler):
 
     def do_GET(self):
-        logging.info("GET request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
-        self._parse_path()
-        self._set_response()
-        self.wfile.write(f"{self.resp_msg}".encode('utf-8'))
+        f = self._parse_path()
+        if f:
+            self.copyfile(f, self.wfile)
+            f.close()
 
     def do_POST(self):
         content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
         post_data = self.rfile.read(content_length) # <--- Gets the data itself
         logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",
                 str(self.path), str(self.headers), post_data.decode('utf-8'))
-
         self._set_response()
         self.wfile.write("POST request for {}".format(self.path).encode('utf-8'))
     
+    def _create_file_path(self):
+        self.path = "/Users/pastuhox/things/http_file_storage/store"
+        self.directory = self.filename[:2]
+        return f"{self.path}/{self.directory}/{self.filename}"
+
     def _parse_path(self):
         logging.info(f"parsing path {self.path}")
         if self.path.startswith("/api/"):
             logging.info(f"self.path = {self.path}")
             path_lst = self.path.split("/")[2:]
-            self._parse_method(path_lst)
-            logging.info(path_lst)
+            return self._parse_method(path_lst)
     
     def _parse_method(self, data):
         try:
-            method, filename = data
+            method, self.filename = data
             logging.info(f"data = {data}")
-            Api.__init__(self, filename)
-            if not filename:
+            self.file_path = self._create_file_path()
+
+            if not self.filename:
                 self.send_response(404)
     
             logging.info(f"method = {method}")
             if method == 'download':
-                self.download()
+                return self._download()
             elif method == 'upload':
                 self.upload()
             elif method == 'delete':
-                self.resp_msg = self.delete()
+                self._delete()
             else:
                 logging.info("No method")
         except ValueError:
             logging.info("ValueError")
             self.send_response(500)
+    
+    def copyfile(self, source, outputfile):
+        shutil.copyfileobj(source, outputfile)
         
+    def _download(self):
+        path = self.file_path
+        f = None
+        ctype = self.guess_type(self.file_path)
+        try:
+            f = open(self.file_path, 'rb')
+        except IOError:
+            self.send_error(404, "File not found")
+            logging.info("404 file not found")
+            return None
+        self.send_response(200)
+        self.send_header("Content-type", ctype)
+        fs = os.fstat(f.fileno())
+        self.send_header("Content-Length", str(fs[6]))
+        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+        self.end_headers()
+        return f
+
+    def _delete(self):
+        try:
+            file_path = self._create_file_path()
+            os.remove(file_path)
+            self.send_response(200)
+            self.send_header("Content-type", 'text/html')
+            self.end_headers()
+            self.wfile.write(f"Deleted {self.filename} from the disk.".encode('utf-8'))
+        except FileNotFoundError as e:
+            self.send_response(404)
+            self.send_header("Content-type", 'text/html')
+            self.end_headers()
+            self.wfile.write(f"File {self.filename} was not found on the disk.".encode('utf-8'))
+            logging.error(f"File {self.filename} was not found on the disk.".encode('utf-8'))
+            logging.error(f"method delete {e}")
 
 
 def run(server_class=HTTPServer, handler_class=S, port=8080):
