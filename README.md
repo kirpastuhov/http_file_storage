@@ -24,6 +24,17 @@ You can start file server with:
 python3 server.py
 ```
 
+Unfortunately, server shutdown has not been implemented yet. But you can always kill the process
+To get PID of process which is listening on port 8080
+```
+sudo lsof -i:8080
+```
+To kill process by PID
+
+```
+kill -9 PID
+```
+
 Storage supports **download**, **delete**, and **upload** methods
 
 ### Download
