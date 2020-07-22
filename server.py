@@ -147,11 +147,10 @@ def run(server_class=HTTPServer, handler_class=S, port=8080):
 
 
 if __name__ == '__main__':
-    run()
-    # with daemon.DaemonContext(
-    #     chroot_directory=None,
-    #     working_directory='/Users/pastuhox/things/http_file_storage'):
-    #     logging.info(os.getcwd())
-    #     run()
+    with daemon.DaemonContext(
+        chroot_directory=None,
+        working_directory='/Users/pastuhox/things/http_file_storage'):
+        logging.info(os.getcwd())
+        run()
 
 
